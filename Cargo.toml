@@ -1,0 +1,10 @@
+[package]
+name = "plc"
+version = "0.0.0"
+authors = ["Jack Grigg <thestr4d@gmail.com>"]
+edition = "2021"
+rust-version = "1.56"
+description = "Key management for DID PLC identities"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
