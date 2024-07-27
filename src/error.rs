@@ -1,11 +1,21 @@
 use std::fmt;
 
+use atrium_api::types::string::Handle;
+
 pub(crate) enum Error {
     DidDocumentHasNoPds,
     HandleInvalid,
     HandleResolutionFailed,
+    LoggedIntoDifferentAccount(Handle),
+    NeedToLogIn,
+    NeedToLogInAgain,
+    PdsAuthFailed(atrium_xrpc::Error<atrium_api::com::atproto::server::create_session::Error>),
+    PdsAuthRefreshFailed(
+        atrium_xrpc::Error<atrium_api::com::atproto::server::refresh_session::Error>,
+    ),
     PlcDirectoryRequestFailed,
     PlcDirectoryReturnedInvalidDidDocument,
+    SessionSaveFailed,
     UnsupportedDidMethod(String),
 }
 
@@ -17,12 +27,18 @@ impl fmt::Debug for Error {
             Error::DidDocumentHasNoPds => write!(f, "The user's DID document doesn't contain a services entry for a PDS"),
             Error::HandleInvalid => write!(f, "The provided handle is invalid (it does not appear in the DID document it points to)"),
             Error::HandleResolutionFailed => write!(f, "Handle resolution failed"),
+            Error::LoggedIntoDifferentAccount(handle) => write!(f, "Currently logged into {}", handle.as_str()),
+            Error::NeedToLogIn => write!(f, "This operation requires authentication, please log in"),
+            Error::NeedToLogInAgain => write!(f, "Session has expired, please log in again"),
+            Error::PdsAuthFailed(e) => write!(f, "Failed to authenticate to PDS: {}", e),
+            Error::PdsAuthRefreshFailed(e) => write!(f, "Failed to refresh PDS session: {}", e),
             Error::PlcDirectoryRequestFailed => {
                 write!(f, "An error occurred while talking to plc.directory")
             }
             Error::PlcDirectoryReturnedInvalidDidDocument => {
                 write!(f, "plc.directory returned an invalid DID document")
             }
+            Error::SessionSaveFailed => write!(f, "Failed to save PDS session data"),
             Error::UnsupportedDidMethod(method) => write!(f, "Unsupported DID method {}; this tool only works with did:plc identities", method),
         }
     }
