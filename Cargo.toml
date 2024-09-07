@@ -15,7 +15,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"] }
 
 # ATProto
-atrium-api = "0.23"
+atrium-api = "0.24"
 atrium-crypto = "0.1"
 atrium-xrpc = "0.11"
 atrium-xrpc-client = "0.5"
