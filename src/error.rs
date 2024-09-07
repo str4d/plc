@@ -13,6 +13,11 @@ pub(crate) enum Error {
     PdsAuthRefreshFailed(
         atrium_xrpc::Error<atrium_api::com::atproto::server::refresh_session::Error>,
     ),
+    PdsServerKeyLookupFailed(
+        atrium_xrpc::Error<
+            atrium_api::com::atproto::identity::get_recommended_did_credentials::Error,
+        >,
+    ),
     PlcDirectoryRequestFailed,
     PlcDirectoryReturnedInvalidDidDocument,
     SessionSaveFailed,
@@ -32,6 +37,7 @@ impl fmt::Debug for Error {
             Error::NeedToLogInAgain => write!(f, "Session has expired, please log in again"),
             Error::PdsAuthFailed(e) => write!(f, "Failed to authenticate to PDS: {}", e),
             Error::PdsAuthRefreshFailed(e) => write!(f, "Failed to refresh PDS session: {}", e),
+            Error::PdsServerKeyLookupFailed(e) => write!(f, "Lookup of PDS server keys failed: {}", e),
             Error::PlcDirectoryRequestFailed => {
                 write!(f, "An error occurred while talking to plc.directory")
             }

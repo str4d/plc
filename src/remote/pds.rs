@@ -1,12 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use atrium_api::{
     agent::{store::MemorySessionStore, AtpAgent},
-    types::string::Did,
+    types::{string::Did, TryFromUnknown},
 };
 use atrium_xrpc_client::reqwest::ReqwestClient;
 
-use crate::{error::Error, local};
+use crate::{data::Key, error::Error, local};
 
 pub(crate) struct Agent {
     inner: Arc<AtpAgent<MemorySessionStore, ReqwestClient>>,
@@ -37,5 +38,60 @@ impl Agent {
     pub(crate) async fn resume_session(&self, did: &Did) -> Result<(), Error> {
         let session = local::Session::load().await.ok_or(Error::NeedToLogIn)?;
         session.resume(&self.inner, did).await
+    }
+
+    pub(crate) async fn get_recommended_server_keys(&self) -> Result<ServerKeys, Error> {
+        let res = self
+            .inner
+            .api
+            .com
+            .atproto
+            .identity
+            .get_recommended_did_credentials()
+            .await
+            .map_err(Error::PdsServerKeyLookupFailed)?;
+
+        let signing = res
+            .data
+            .verification_methods
+            .and_then(|d| HashMap::<String, String>::try_from_unknown(d).ok())
+            .into_iter()
+            .flat_map(|m| {
+                m.into_iter().filter_map(|(k, v)| match k.as_str() {
+                    "atproto" => Some(Key::did(&v)),
+                    _ => None,
+                })
+            })
+            .collect();
+
+        let rotation = res
+            .data
+            .rotation_keys
+            .into_iter()
+            .flat_map(|keys| keys.into_iter().map(|key| Key::did(&key)))
+            .collect();
+
+        Ok(ServerKeys { signing, rotation })
+    }
+}
+
+pub(crate) struct ServerKeys {
+    signing: Vec<atrium_crypto::Result<Key>>,
+    rotation: Vec<atrium_crypto::Result<Key>>,
+}
+
+impl ServerKeys {
+    pub(crate) fn contains_signing(&self, key: &Key) -> bool {
+        self.signing
+            .iter()
+            .find(|i| matches!(i, Ok(k) if k == key))
+            .is_some()
+    }
+
+    pub(crate) fn contains_rotation(&self, key: &Key) -> bool {
+        self.rotation
+            .iter()
+            .find(|i| matches!(i, Ok(k) if k == key))
+            .is_some()
     }
 }
