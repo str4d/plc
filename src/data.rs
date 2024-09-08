@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use atrium_api::types::string::Did;
 use atrium_crypto::Algorithm;
+use diff::Diff;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -14,17 +15,30 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub(crate) struct State {
     did: Did,
-    rotation_keys: Vec<String>,
-    verification_methods: HashMap<String, String>,
-    also_known_as: Vec<String>,
-    services: HashMap<String, Service>,
+    #[serde(flatten)]
+    plc: PlcData,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Diff)]
+#[diff(attr(
+    #[derive(Debug)]
+))]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PlcData {
+    pub(crate) rotation_keys: Vec<String>,
+    pub(crate) verification_methods: HashMap<String, String>,
+    pub(crate) also_known_as: Vec<String>,
+    pub(crate) services: HashMap<String, Service>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Diff)]
+#[diff(attr(
+    #[derive(Debug)]
+))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Service {
-    r#type: String,
-    endpoint: String,
+    pub(crate) r#type: String,
+    pub(crate) endpoint: String,
 }
 
 impl State {
@@ -53,9 +67,13 @@ impl State {
         &self.did
     }
 
+    pub(crate) fn inner_data(&self) -> &PlcData {
+        &self.plc
+    }
+
     /// Returns the current primary handle for this DID.
     pub(crate) fn handle(&self) -> Option<&str> {
-        self.also_known_as.iter().find_map(|uri| {
+        self.plc.also_known_as.iter().find_map(|uri| {
             uri.strip_prefix("at://")
                 .map(|s| s.split_once('/').map(|(handle, _)| handle).unwrap_or(s))
         })
@@ -63,18 +81,20 @@ impl State {
 
     pub(crate) fn signing_key(&self) -> Option<atrium_crypto::Result<Key>> {
         // Ignore non-ATProto verification methods.
-        self.verification_methods
+        self.plc
+            .verification_methods
             .get("atproto")
             .map(|key| Key::did(&key))
     }
 
     pub(crate) fn rotation_keys(&self) -> Vec<atrium_crypto::Result<Key>> {
-        self.rotation_keys.iter().map(Key::did).collect()
+        self.plc.rotation_keys.iter().map(Key::did).collect()
     }
 
     /// Returns the endpoint for the user's currently-configured PDS.
     pub(crate) fn endpoint(&self) -> Option<&str> {
-        self.services
+        self.plc
+            .services
             .get("atproto_pds")
             .and_then(|v| (v.r#type == "AtprotoPersonalDataServer").then_some(v.endpoint.as_str()))
     }

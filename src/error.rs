@@ -20,6 +20,7 @@ pub(crate) enum Error {
     ),
     PlcDirectoryRequestFailed,
     PlcDirectoryReturnedInvalidDidDocument,
+    PlcDirectoryReturnedInvalidOperationLog,
     SessionSaveFailed,
     UnsupportedDidMethod(String),
 }
@@ -43,6 +44,9 @@ impl fmt::Debug for Error {
             }
             Error::PlcDirectoryReturnedInvalidDidDocument => {
                 write!(f, "plc.directory returned an invalid DID document")
+            }
+            Error::PlcDirectoryReturnedInvalidOperationLog => {
+                write!(f, "plc.directory returned an invalid operation log")
             }
             Error::SessionSaveFailed => write!(f, "Failed to save PDS session data"),
             Error::UnsupportedDidMethod(method) => write!(f, "Unsupported DID method {}; this tool only works with did:plc identities", method),

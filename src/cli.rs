@@ -12,6 +12,8 @@ pub(crate) enum Command {
     #[command(subcommand)]
     Auth(Auth),
     List(List),
+    #[command(subcommand)]
+    Ops(Ops),
 }
 
 /// Manage authentication
@@ -30,5 +32,17 @@ pub(crate) struct Login {
 /// Lists keys for a user
 #[derive(Debug, Args)]
 pub(crate) struct List {
+    pub(crate) user: String,
+}
+
+/// Inspect operations for a DID.
+#[derive(Debug, Subcommand)]
+pub(crate) enum Ops {
+    List(ListOps),
+}
+
+/// Lists operations for a user's DID.
+#[derive(Debug, Args)]
+pub(crate) struct ListOps {
     pub(crate) user: String,
 }
