@@ -29,3 +29,6 @@ zeroize = { version = "1", features = ["zeroize_derive"] }
 known-folders = "1"
 serde_json = "1"
 xdg = "2"
+
+[dev-dependencies]
+snapbox = { version = "0.6", features = ["dir"] }

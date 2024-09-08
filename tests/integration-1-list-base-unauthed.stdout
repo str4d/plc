@@ -1,0 +1,10 @@
+Not currently authenticated to [HANDLE]; can't fetch PDS keys
+
+Account did:plc:[..]
+- Primary handle: @[HANDLE]
+- PDS: https://[..].host.bsky.network
+- 1 signing keys:
+  - Unknown (Secp256k1): [..]
+- 2 rotation keys:
+  - [0] Unknown (Secp256k1): [..]
+  - [1] Unknown (Secp256k1): [..]

@@ -1,0 +1,8 @@
+Account did:plc:[..]
+- Primary handle: @[HANDLE]
+- PDS: https://[..].host.bsky.network
+- 1 signing keys:
+  - PDS (Secp256k1)
+- 2 rotation keys:
+  - [0] PDS (Secp256k1)
+  - [1] PDS (Secp256k1)
