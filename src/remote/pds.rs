@@ -51,18 +51,16 @@ impl Agent {
             .await
             .map_err(Error::PdsServerKeyLookupFailed)?;
 
-        let signing = res
-            .data
-            .verification_methods
-            .and_then(|d| HashMap::<String, String>::try_from_unknown(d).ok())
-            .into_iter()
-            .flat_map(|m| {
-                m.into_iter().filter_map(|(k, v)| match k.as_str() {
-                    "atproto" => Some(Key::did(&v)),
-                    _ => None,
+        let signing = res.data.verification_methods.and_then(|d| {
+            HashMap::<String, String>::try_from_unknown(d)
+                .map_err(ParseError::Data)
+                .and_then(|m| {
+                    m.get("atproto")
+                        .map(|key| Key::did(&key).map_err(ParseError::Key))
+                        .transpose()
                 })
-            })
-            .collect();
+                .transpose()
+        });
 
         let rotation = res
             .data
@@ -76,16 +74,13 @@ impl Agent {
 }
 
 pub(crate) struct ServerKeys {
-    signing: Vec<atrium_crypto::Result<Key>>,
+    signing: Option<Result<Key, ParseError>>,
     rotation: Vec<atrium_crypto::Result<Key>>,
 }
 
 impl ServerKeys {
-    pub(crate) fn contains_signing(&self, key: &Key) -> bool {
-        self.signing
-            .iter()
-            .find(|i| matches!(i, Ok(k) if k == key))
-            .is_some()
+    pub(crate) fn is_signing(&self, key: &Key) -> bool {
+        matches!(&self.signing, Some(Ok(k)) if k == key)
     }
 
     pub(crate) fn contains_rotation(&self, key: &Key) -> bool {
@@ -94,4 +89,9 @@ impl ServerKeys {
             .find(|i| matches!(i, Ok(k) if k == key))
             .is_some()
     }
+}
+
+pub(crate) enum ParseError {
+    Data(atrium_api::error::Error),
+    Key(atrium_crypto::Error),
 }

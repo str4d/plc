@@ -61,12 +61,11 @@ impl State {
         })
     }
 
-    pub(crate) fn signing_keys(&self) -> Vec<atrium_crypto::Result<Key>> {
+    pub(crate) fn signing_key(&self) -> Option<atrium_crypto::Result<Key>> {
+        // Ignore non-ATProto verification methods.
         self.verification_methods
-            .iter()
-            // Ignore non-ATProto verification methods.
-            .filter_map(|(protocol, key)| (protocol == "atproto").then(|| Key::did(&key)))
-            .collect()
+            .get("atproto")
+            .map(|key| Key::did(&key))
     }
 
     pub(crate) fn rotation_keys(&self) -> Vec<atrium_crypto::Result<Key>> {

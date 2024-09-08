@@ -30,27 +30,24 @@ impl List {
         }
         println!("- PDS: {}", pds);
 
-        let signing_keys = state.signing_keys();
-        println!("- {} signing keys:", signing_keys.len());
-        for res in &signing_keys {
-            match res {
-                Ok(k)
-                    if server_keys
-                        .as_ref()
-                        .map(|keys| keys.contains_signing(k))
-                        .unwrap_or(false) =>
-                {
-                    println!("  - PDS ({:?})", k.algorithm);
-                }
-                Ok(k) => {
-                    println!(
-                        "  - Unknown ({:?}): {}",
-                        k.algorithm,
-                        hex::encode(&k.public_key)
-                    );
-                }
-                Err(e) => println!("  - Invalid: {}", e),
+        match state.signing_key() {
+            None => println!("- No signing key"),
+            Some(Ok(k))
+                if server_keys
+                    .as_ref()
+                    .map(|keys| keys.is_signing(&k))
+                    .unwrap_or(false) =>
+            {
+                println!("- Signing key: PDS ({:?})", k.algorithm);
             }
+            Some(Ok(k)) => {
+                println!(
+                    "- Signing key: Unknown ({:?}): {}",
+                    k.algorithm,
+                    hex::encode(&k.public_key)
+                );
+            }
+            Some(Err(e)) => println!("- Invalid signing key: {}", e),
         }
 
         let rotation_keys = state.rotation_keys();
