@@ -11,6 +11,10 @@ use crate::{
     remote::{handle, plc},
 };
 
+pub(crate) const ATPROTO_VERIFICATION_METHOD: &str = "atproto";
+pub(crate) const ATPROTO_PDS_KIND: &str = "atproto_pds";
+pub(crate) const ATPROTO_PDS_TYPE: &str = "AtprotoPersonalDataServer";
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct State {
@@ -81,7 +85,10 @@ impl State {
 
     pub(crate) fn signing_key(&self) -> Option<atrium_crypto::Result<Key>> {
         // Ignore non-ATProto verification methods.
-        self.plc.verification_methods.get("atproto").map(Key::did)
+        self.plc
+            .verification_methods
+            .get(ATPROTO_VERIFICATION_METHOD)
+            .map(Key::did)
     }
 
     pub(crate) fn rotation_keys(&self) -> Vec<atrium_crypto::Result<Key>> {
@@ -92,8 +99,8 @@ impl State {
     pub(crate) fn endpoint(&self) -> Option<&str> {
         self.plc
             .services
-            .get("atproto_pds")
-            .and_then(|v| (v.r#type == "AtprotoPersonalDataServer").then_some(v.endpoint.as_str()))
+            .get(ATPROTO_PDS_KIND)
+            .and_then(|v| (v.r#type == ATPROTO_PDS_TYPE).then_some(v.endpoint.as_str()))
     }
 }
 

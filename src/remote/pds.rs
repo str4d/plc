@@ -8,7 +8,11 @@ use atrium_api::{
 };
 use atrium_xrpc_client::reqwest::ReqwestClient;
 
-use crate::{data::Key, error::Error, local};
+use crate::{
+    data::{Key, ATPROTO_VERIFICATION_METHOD},
+    error::Error,
+    local,
+};
 
 pub(crate) struct Agent {
     inner: Arc<AtpAgent<MemorySessionStore, ReqwestClient>>,
@@ -56,7 +60,7 @@ impl Agent {
             HashMap::<String, String>::try_from_unknown(d)
                 .map_err(ParseError::Data)
                 .and_then(|m| {
-                    m.get("atproto")
+                    m.get(ATPROTO_VERIFICATION_METHOD)
                         .map(|key| Key::did(key).map_err(ParseError::Key))
                         .transpose()
                 })

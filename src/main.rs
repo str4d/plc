@@ -8,6 +8,9 @@ mod local;
 mod remote;
 mod util;
 
+#[cfg(feature = "mirror")]
+mod mirror;
+
 #[tokio::main]
 async fn main() -> Result<(), error::Error> {
     let opts = cli::Options::parse();
@@ -17,5 +20,9 @@ async fn main() -> Result<(), error::Error> {
         cli::Command::List(command) => command.run().await,
         cli::Command::Ops(cli::Ops::List(command)) => command.run().await,
         cli::Command::Ops(cli::Ops::Audit(command)) => command.run().await,
+        #[cfg(feature = "mirror")]
+        cli::Command::Mirror(cli::Mirror::Run(command)) => {
+            command.run().await.map_err(error::Error::Mirror)
+        }
     }
 }
