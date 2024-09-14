@@ -61,21 +61,21 @@ fn end_to_end() {
 
     // List keys while unauthenticated.
     plc.run()
-        .args(&["list", handle])
+        .args(["list", handle])
         .assert()
         .success()
         .stdout_eq(file!["integration-1-list-base-unauthed.stdout"]);
 
     // Authenticate.
     plc.run()
-        .args(&["auth", "login", handle, app_password])
+        .args(["auth", "login", handle, app_password])
         .assert()
         .success()
         .stdout_eq(file!["integration-1-auth.stdout"]);
 
     // List keys while authenticated.
     plc.run()
-        .args(&["list", handle])
+        .args(["list", handle])
         .assert()
         .success()
         .stdout_eq(file!["integration-1-list-base-authed.stdout"]);

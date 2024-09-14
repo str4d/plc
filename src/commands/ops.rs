@@ -49,10 +49,8 @@ impl ListOps {
                         } else {
                             println!("- Inserted after rotation key [{}]:", index - 1);
                         }
-                        for change in changes {
-                            if let Some(value) = change {
-                                println!("  - {value}");
-                            }
+                        for change in changes.iter().flatten() {
+                            println!("  - {change}");
                         }
                     }
                     diff::VecDiffType::Altered { index, changes } => {
@@ -87,10 +85,8 @@ impl ListOps {
                         } else {
                             println!("- Inserted after Also-known-as[{}]:", index - 1);
                         }
-                        for change in changes {
-                            if let Some(value) = change {
-                                println!("  - {value}");
-                            }
+                        for change in changes.iter().flatten() {
+                            println!("  - {change}");
                         }
                     }
                     diff::VecDiffType::Altered { index, changes } => {

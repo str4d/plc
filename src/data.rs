@@ -46,12 +46,12 @@ impl State {
         // Parse `user` as a DID, or look it up as a handle.
         let did = match Did::new(user.into()) {
             Ok(did) => did,
-            Err(_) => handle::resolve(&user, &client).await?,
+            Err(_) => handle::resolve(user, client).await?,
         };
 
         // Fetch the current DID state.
         let state = match did.method() {
-            "did:plc" => plc::get_state(&did, &client).await,
+            "did:plc" => plc::get_state(&did, client).await,
             method => Err(Error::UnsupportedDidMethod(method.into())),
         }?;
 
@@ -81,10 +81,7 @@ impl State {
 
     pub(crate) fn signing_key(&self) -> Option<atrium_crypto::Result<Key>> {
         // Ignore non-ATProto verification methods.
-        self.plc
-            .verification_methods
-            .get("atproto")
-            .map(|key| Key::did(&key))
+        self.plc.verification_methods.get("atproto").map(Key::did)
     }
 
     pub(crate) fn rotation_keys(&self) -> Vec<atrium_crypto::Result<Key>> {
