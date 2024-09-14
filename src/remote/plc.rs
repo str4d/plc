@@ -158,6 +158,7 @@ struct LegacyCreateOp {
     /// HTTP/HTTPS URL of an ATProto PDS.
     service: String,
     /// Always `null`.
+    #[allow(dead_code)]
     prev: (),
 }
 

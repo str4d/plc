@@ -12,7 +12,23 @@ impl List {
 
         // `get_recommended_server_keys` requires authentication.
         let server_keys = if agent.resume_session(state.did()).await.is_ok() {
-            Some(agent.get_recommended_server_keys().await?)
+            let server_keys = agent.get_recommended_server_keys().await?;
+
+            match &server_keys.signing {
+                None => println!("WARNING: PDS did not recommend a signing key!"),
+                Some(Err(e)) => println!("WARNING: PDS recommended an invalid signing key! {}", e),
+                Some(Ok(_)) => (),
+            }
+            for (i, res) in server_keys.rotation.iter().enumerate() {
+                if let Err(e) = res {
+                    println!(
+                        "WARNING: PDS recommended an invalid rotation key at position {i}! {}",
+                        e,
+                    );
+                }
+            }
+
+            Some(server_keys)
         } else {
             println!(
                 "Not currently authenticated to {}; can't fetch PDS keys",

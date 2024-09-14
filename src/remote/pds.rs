@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use atrium_api::{
@@ -56,7 +57,7 @@ impl Agent {
                 .map_err(ParseError::Data)
                 .and_then(|m| {
                     m.get("atproto")
-                        .map(|key| Key::did(&key).map_err(ParseError::Key))
+                        .map(|key| Key::did(key).map_err(ParseError::Key))
                         .transpose()
                 })
                 .transpose()
@@ -74,8 +75,8 @@ impl Agent {
 }
 
 pub(crate) struct ServerKeys {
-    signing: Option<Result<Key, ParseError>>,
-    rotation: Vec<atrium_crypto::Result<Key>>,
+    pub(crate) signing: Option<Result<Key, ParseError>>,
+    pub(crate) rotation: Vec<atrium_crypto::Result<Key>>,
 }
 
 impl ServerKeys {
@@ -84,14 +85,20 @@ impl ServerKeys {
     }
 
     pub(crate) fn contains_rotation(&self, key: &Key) -> bool {
-        self.rotation
-            .iter()
-            .find(|i| matches!(i, Ok(k) if k == key))
-            .is_some()
+        self.rotation.iter().any(|i| matches!(i, Ok(k) if k == key))
     }
 }
 
 pub(crate) enum ParseError {
     Data(atrium_api::error::Error),
     Key(atrium_crypto::Error),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::Data(e) => write!(f, "{e}"),
+            ParseError::Key(e) => write!(f, "{e}"),
+        }
+    }
 }
