@@ -1,14 +1,21 @@
+use std::collections::HashMap;
+
+use anyhow::anyhow;
 use async_sqlite::{
-    rusqlite::{named_params, CachedStatement, OpenFlags, OptionalExtension, Transaction},
+    rusqlite::{
+        named_params, CachedStatement, Connection, OpenFlags, OptionalExtension, Row, Transaction,
+    },
     JournalMode, Pool, PoolBuilder,
 };
 use atrium_api::types::string::{Cid, Datetime, Did};
 use tracing::info;
 
 use crate::{
-    data::{ATPROTO_PDS_KIND, ATPROTO_PDS_TYPE, ATPROTO_VERIFICATION_METHOD},
+    data::{PlcData, ATPROTO_PDS_KIND, ATPROTO_PDS_TYPE, ATPROTO_VERIFICATION_METHOD},
     remote::plc,
 };
+
+use super::ExportParams;
 
 #[derive(Clone)]
 pub(crate) struct Db {
@@ -202,6 +209,49 @@ impl Db {
                 }
             })
             .await?)
+    }
+
+    pub(crate) async fn get_last_active_entry(
+        &self,
+        did: Did,
+    ) -> anyhow::Result<Option<plc::LogEntry>> {
+        let entry = self
+            .inner
+            .conn(|conn| match Entry::get_latest_active(conn, did)? {
+                None => Ok(None),
+                Some(entry) => entry.hydrate(conn).map(Some),
+            })
+            .await?;
+
+        entry.map(|entry| entry.assemble()).transpose()
+    }
+
+    pub(crate) async fn get_audit_log(&self, did: Did) -> anyhow::Result<Vec<plc::LogEntry>> {
+        let entries = self
+            .inner
+            .conn(|conn| {
+                Entry::get_audit_log(conn, did)?
+                    .into_iter()
+                    .map(|entry| entry.hydrate(conn))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .await?;
+
+        entries.into_iter().map(|entry| entry.assemble()).collect()
+    }
+
+    pub(crate) async fn export(&self, params: ExportParams) -> anyhow::Result<Vec<plc::LogEntry>> {
+        let entries = self
+            .inner
+            .conn(|conn| {
+                Entry::get_log_entries(conn, params.bounded_count(), params.after)?
+                    .into_iter()
+                    .map(|entry| entry.hydrate(conn))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .await?;
+
+        entries.into_iter().map(|entry| entry.assemble()).collect()
     }
 }
 
@@ -450,5 +500,329 @@ impl<'a> DbInserter<'a> {
             ":endpoint": endpoint,
         })?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct Entry {
+    entry_id: i64,
+    did: Result<Did, &'static str>,
+    cid: cid::Result<cid::Cid>,
+    created_at: Result<Datetime, chrono::ParseError>,
+    nullified: bool,
+    r#type: String,
+    also_known_as: Option<serde_json::Value>,
+    atproto_signing: Option<String>,
+    atproto_pds: Option<String>,
+    prev: Option<cid::Result<cid::Cid>>,
+    sig: String,
+}
+
+impl Entry {
+    fn get_latest_active(
+        conn: &Connection,
+        did: Did,
+    ) -> async_sqlite::rusqlite::Result<Option<Self>> {
+        conn.query_row(
+            "SELECT
+                curr.entry_id,
+                curr.cid,
+                curr.created_at,
+                curr.nullified,
+                curr.type,
+                curr.also_known_as,
+                signing.key AS atproto_signing,
+                atproto_pds.endpoint AS atproto_pds,
+                prev.cid AS prev,
+                curr.sig
+            FROM plc_log curr
+            JOIN identity ON curr.identity = identity.identity_id
+            LEFT JOIN key signing ON curr.atproto_signing = signing.key_id
+            LEFT JOIN atproto_pds ON curr.atproto_pds = atproto_pds.pds_id
+            LEFT JOIN plc_log prev ON curr.prev = prev.entry_id
+            WHERE did = :did
+            AND curr.nullified IS FALSE
+            ORDER BY curr.created_at DESC
+            LIMIT 1",
+            named_params! {":did": did.clone().as_ref()},
+            |row| Self::from_row(Ok(did), row),
+        )
+        .optional()
+    }
+
+    fn get_audit_log(conn: &Connection, did: Did) -> async_sqlite::rusqlite::Result<Vec<Self>> {
+        conn.prepare(
+            "SELECT
+                curr.entry_id,
+                curr.cid,
+                curr.created_at,
+                curr.nullified,
+                curr.type,
+                curr.also_known_as,
+                signing.key AS atproto_signing,
+                atproto_pds.endpoint AS atproto_pds,
+                prev.cid AS prev,
+                curr.sig
+            FROM plc_log curr
+            JOIN identity ON curr.identity = identity.identity_id
+            LEFT JOIN key signing ON curr.atproto_signing = signing.key_id
+            LEFT JOIN atproto_pds ON curr.atproto_pds = atproto_pds.pds_id
+            LEFT JOIN plc_log prev ON curr.prev = prev.entry_id
+            WHERE did = :did
+            ORDER BY curr.created_at",
+        )?
+        .query_map(named_params! {":did": did.clone().as_ref()}, |row| {
+            Self::from_row(Ok(did.clone()), row)
+        })?
+        .collect()
+    }
+
+    fn get_log_entries(
+        conn: &Connection,
+        count: usize,
+        after: Option<Datetime>,
+    ) -> async_sqlite::rusqlite::Result<Vec<Self>> {
+        conn.prepare(
+            "SELECT
+                curr.entry_id,
+                identity.did,
+                curr.cid,
+                curr.created_at,
+                curr.nullified,
+                curr.type,
+                curr.also_known_as,
+                signing.key AS atproto_signing,
+                atproto_pds.endpoint AS atproto_pds,
+                prev.cid AS prev,
+                curr.sig
+            FROM plc_log curr
+            JOIN identity ON curr.identity = identity.identity_id
+            LEFT JOIN key signing ON curr.atproto_signing = signing.key_id
+            LEFT JOIN atproto_pds ON curr.atproto_pds = atproto_pds.pds_id
+            LEFT JOIN plc_log prev ON curr.prev = prev.entry_id
+            WHERE curr.created_at > :after
+            ORDER BY curr.created_at
+            LIMIT :count",
+        )?
+        .query_map(
+            named_params! {":after": after.as_ref().map(|d| d.as_str()), ":count": count},
+            |row| Self::from_row(Did::new(row.get("did")?), row),
+        )?
+        .collect()
+    }
+
+    fn from_row(did: Result<Did, &'static str>, row: &Row) -> async_sqlite::rusqlite::Result<Self> {
+        Ok(Self {
+            entry_id: row.get("entry_id")?,
+            did,
+            cid: cid::Cid::read_bytes(row.get_ref("cid")?.as_blob()?),
+            created_at: row.get_ref("created_at")?.as_str()?.parse(),
+            nullified: row.get("nullified")?,
+            r#type: row.get("type")?,
+            also_known_as: row.get("also_known_as")?,
+            atproto_signing: row.get("atproto_signing")?,
+            atproto_pds: row.get("atproto_pds")?,
+            prev: row
+                .get_ref("prev")?
+                .as_blob_or_null()?
+                .map(cid::Cid::read_bytes),
+            sig: row.get("sig")?,
+        })
+    }
+
+    fn hydrate(self, conn: &Connection) -> async_sqlite::rusqlite::Result<HydratedEntry> {
+        let rotation_keys = conn
+            .prepare(
+                "SELECT key.key
+            FROM rotation_keys r
+            JOIN key ON r.key = key.key_id
+            WHERE entry = :entry
+            ORDER BY authority",
+            )?
+            .query_map(named_params! {":entry": self.entry_id}, |row| {
+                row.get::<_, String>("key")
+            })?
+            .collect::<Result<_, _>>()?;
+
+        let verification_methods = conn
+            .prepare(
+                "SELECT service, key.key
+            FROM verification_methods v
+            JOIN key ON v.key = key.key_id
+            WHERE entry = :entry",
+            )?
+            .query_map(named_params! {":entry": self.entry_id}, |row| {
+                Ok((row.get("service")?, row.get("key")?))
+            })?
+            .collect::<Result<_, _>>()?;
+
+        let services = conn
+            .prepare(
+                "SELECT kind, type, endpoint
+            FROM services
+            WHERE entry = :entry",
+            )?
+            .query_map(named_params! {":entry": self.entry_id}, |row| {
+                Ok((row.get("kind")?, (row.get("type")?, row.get("endpoint")?)))
+            })?
+            .collect::<Result<_, _>>()?;
+
+        Ok(HydratedEntry {
+            entry: self,
+            rotation_keys,
+            verification_methods,
+            services,
+        })
+    }
+}
+
+struct HydratedEntry {
+    entry: Entry,
+    rotation_keys: Vec<String>,
+    verification_methods: HashMap<String, String>,
+    services: HashMap<String, (String, String)>,
+}
+
+impl HydratedEntry {
+    fn assemble(self) -> anyhow::Result<plc::LogEntry> {
+        let Self {
+            entry,
+            rotation_keys,
+            mut verification_methods,
+            services,
+        } = self;
+
+        let cid = Cid::new(entry.cid?);
+        let prev = entry.prev.transpose()?.map(Cid::new);
+
+        let content = match entry.r#type.as_str() {
+            "O" => {
+                let also_known_as = match entry
+                    .also_known_as
+                    .ok_or_else(|| anyhow!("Missing also_known_as"))?
+                {
+                    serde_json::Value::Array(v) => v
+                        .into_iter()
+                        .map(|e| match e {
+                            serde_json::Value::String(s) => Ok(s),
+                            _ => Err(anyhow!("also_known_as does not contain strings")),
+                        })
+                        .collect(),
+                    _ => Err(anyhow!("also_known_as is not an array")),
+                }?;
+
+                if let Some(endpoint) = entry.atproto_signing {
+                    verification_methods.insert(ATPROTO_VERIFICATION_METHOD.into(), endpoint);
+                }
+
+                let services = services
+                    .into_iter()
+                    .map(|(kind, (r#type, endpoint))| {
+                        (kind, crate::data::Service { r#type, endpoint })
+                    })
+                    .chain(entry.atproto_pds.map(|endpoint| {
+                        (
+                            ATPROTO_PDS_KIND.into(),
+                            crate::data::Service {
+                                r#type: ATPROTO_PDS_TYPE.into(),
+                                endpoint,
+                            },
+                        )
+                    }))
+                    .collect();
+
+                Ok(plc::Operation::Change(plc::ChangeOp {
+                    data: PlcData {
+                        rotation_keys,
+                        verification_methods,
+                        also_known_as,
+                        services,
+                    },
+                    prev,
+                }))
+            }
+            "T" => {
+                if entry.also_known_as.is_some()
+                    || entry.atproto_signing.is_some()
+                    || entry.atproto_pds.is_some()
+                {
+                    Err(anyhow!("Tombstone has unexpected entries"))
+                } else {
+                    Ok(plc::Operation::Tombstone(plc::TombstoneOp {
+                        prev: prev.ok_or_else(|| anyhow!("Tombstone op missing prev"))?,
+                    }))
+                }
+            }
+            "C" => {
+                if !(rotation_keys.len() == 2
+                    && verification_methods.is_empty()
+                    && services.is_empty())
+                {
+                    return Err(anyhow!("Legacy create op has unexpected entries"));
+                }
+
+                let mut rotation_keys = rotation_keys.into_iter();
+                let recovery_key = rotation_keys.next().expect("present");
+                if rotation_keys.next() != entry.atproto_signing {
+                    return Err(anyhow!(
+                        "Legacy create op {} has secondary rotation key mismatch",
+                        cid.as_ref(),
+                    ));
+                }
+
+                let handle = match entry
+                    .also_known_as
+                    .ok_or_else(|| anyhow!("Missing also_known_as"))?
+                {
+                    serde_json::Value::Array(v) => {
+                        if v.len() == 1 {
+                            match v.into_iter().next().expect("present") {
+                                serde_json::Value::String(s) => s
+                                    .strip_prefix("at://")
+                                    .map(String::from)
+                                    .ok_or_else(|| anyhow!("also_known_as missing prefix")),
+                                _ => Err(anyhow!("also_known_as does not contain strings")),
+                            }
+                        } else {
+                            Err(anyhow!("Legacy create op also_known_as is not length 1"))
+                        }
+                    }
+                    _ => Err(anyhow!("also_known_as is not an array")),
+                }?;
+
+                Ok(plc::Operation::LegacyCreate(plc::LegacyCreateOp {
+                    signing_key: entry
+                        .atproto_signing
+                        .ok_or_else(|| anyhow!("Legacy create op missing signing_key"))?,
+                    recovery_key,
+                    handle,
+                    service: entry
+                        .atproto_pds
+                        .ok_or_else(|| anyhow!("Legacy create op missing atproto_pds"))?,
+                    prev: (),
+                }))
+            }
+            s => Err(anyhow!("Unknown operation type {s}")),
+        }?;
+
+        let operation = plc::SignedOperation {
+            content,
+            sig: entry.sig,
+        };
+
+        if operation.cid() == cid {
+            Ok(plc::LogEntry {
+                did: entry.did.map_err(|e| anyhow!("{e}"))?,
+                operation,
+                cid,
+                nullified: entry.nullified,
+                created_at: entry.created_at?,
+            })
+        } else {
+            Err(anyhow!(
+                "Internal server error: CID mismatch for {}",
+                cid.as_ref(),
+            ))
+        }
     }
 }

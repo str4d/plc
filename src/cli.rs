@@ -69,4 +69,8 @@ pub(crate) enum Mirror {
 #[derive(Debug, Args)]
 pub(crate) struct RunMirror {
     pub(crate) sqlite_db: String,
+
+    /// If provided, the mirror will expose the same API as plc.directory on this address.
+    #[arg(short, long)]
+    pub(crate) listen: Option<String>,
 }

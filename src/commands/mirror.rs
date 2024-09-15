@@ -5,7 +5,7 @@ use tracing::{error, info};
 use crate::{cli::RunMirror, mirror, remote::plc};
 
 impl RunMirror {
-    pub(crate) async fn run(&self) -> anyhow::Result<()> {
+    pub(crate) async fn run(self) -> anyhow::Result<()> {
         tracing_subscriber::fmt::init();
 
         let client = reqwest::Client::builder()
@@ -46,6 +46,16 @@ impl RunMirror {
                 }
             }
         });
+
+        if let Some(addr) = self.listen {
+            // Spawn the server.
+            let db = db_handle.clone();
+            tokio::spawn(async move {
+                if let Err(e) = mirror::serve(db, addr).await {
+                    error!("Mirror server exited with an error: {e}")
+                }
+            });
+        }
 
         // Wait for exit.
         tokio::signal::ctrl_c().await?;

@@ -157,7 +157,7 @@ impl OperationsLog {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LogEntry {
     pub(crate) did: Did,
@@ -165,6 +165,22 @@ pub(crate) struct LogEntry {
     pub(crate) cid: Cid,
     pub(crate) nullified: bool,
     pub(crate) created_at: Datetime,
+}
+
+impl LogEntry {
+    pub(crate) fn into_state(self) -> Option<State> {
+        match self.operation.content {
+            Operation::Change(op) => Some(State {
+                did: self.did,
+                plc: op.data,
+            }),
+            Operation::Tombstone(_) => None,
+            Operation::LegacyCreate(op) => Some(State {
+                did: self.did,
+                plc: op.into_plc_data(),
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -187,7 +203,7 @@ impl SignedOperation {
     /// Computes the CID for this operation.
     ///
     /// This is used in `prev` references to prior operations.
-    fn cid(&self) -> Cid {
+    pub(crate) fn cid(&self) -> Cid {
         Cid::new(cid::Cid::new_v1(
             0x71,
             Multihash::wrap(0x12, &Sha256::digest(self.signed_bytes())).expect("correct length"),

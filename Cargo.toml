@@ -42,6 +42,10 @@ xdg = "2"
 # Registry mirror
 anyhow = { version = "1", optional = true }
 async-sqlite = { version = "0.3", optional = true, features = ["serde_json"] }
+axum = { version = "0.7", optional = true }
+bytes = { version = "1", optional = true }
+mime = { version = "0.3", optional = true }
+serde-jsonlines = { version = "0.6", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter", "fmt"]}
 
@@ -53,6 +57,10 @@ snapbox = { version = "0.6", features = ["dir"] }
 mirror = [
     "dep:anyhow",
     "dep:async-sqlite",
+    "dep:axum",
+    "dep:bytes",
+    "dep:mime",
+    "dep:serde-jsonlines",
     "dep:tracing",
     "dep:tracing-subscriber",
     "tokio/signal"
