@@ -1,12 +1,20 @@
-use atrium_api::types::string::{Cid, Did};
+use atrium_api::types::string::{Cid, Datetime, Did};
+use cid::multihash::Multihash;
 use diff::Diff;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::{
     data::{PlcData, PlcDataDiff, Service, State},
     error::Error,
 };
+
+mod audit;
+pub(crate) use audit::AuditLog;
+
+#[cfg(test)]
+mod testing;
 
 pub(crate) async fn get_state(did: &Did, client: &Client) -> Result<State, Error> {
     let resp = client
@@ -68,22 +76,7 @@ impl OperationsLog {
             Some(SignedOperation {
                 content: Operation::LegacyCreate(op),
                 ..
-            }) => Ok(PlcData {
-                rotation_keys: op.rotation_keys().map(String::from).collect(),
-                verification_methods: Some(("atproto".into(), op.signing_key))
-                    .into_iter()
-                    .collect(),
-                also_known_as: vec![format!("at://{}", op.handle)],
-                services: Some((
-                    "atproto_pds".into(),
-                    Service {
-                        r#type: "AtprotoPersonalDataServer".into(),
-                        endpoint: op.service,
-                    },
-                ))
-                .into_iter()
-                .collect(),
-            }),
+            }) => Ok(op.into_plc_data()),
             _ => Err(Error::PlcDirectoryReturnedInvalidOperationLog),
         }?;
 
@@ -106,15 +99,45 @@ impl OperationsLog {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct SignedOperation {
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LogEntry {
+    did: Did,
+    operation: SignedOperation,
+    cid: Cid,
+    nullified: bool,
+    created_at: Datetime,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SignedOperation {
     #[serde(flatten)]
     content: Operation,
     /// Signature of the operation in `base64url` encoding.
     sig: String,
 }
 
-#[derive(Debug, Deserialize)]
+impl SignedOperation {
+    fn unsigned_bytes(&self) -> Vec<u8> {
+        self.content.unsigned_bytes()
+    }
+
+    fn signed_bytes(&self) -> Vec<u8> {
+        serde_ipld_dagcbor::to_vec(self).unwrap()
+    }
+
+    /// Computes the CID for this operation.
+    ///
+    /// This is used in `prev` references to prior operations.
+    fn cid(&self) -> Cid {
+        Cid::new(cid::Cid::new_v1(
+            0x71,
+            Multihash::wrap(0x12, &Sha256::digest(self.signed_bytes())).expect("correct length"),
+        ))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 enum Operation {
     #[serde(rename = "plc_operation")]
@@ -125,7 +148,13 @@ enum Operation {
     LegacyCreate(LegacyCreateOp),
 }
 
-#[derive(Debug, Deserialize)]
+impl Operation {
+    fn unsigned_bytes(&self) -> Vec<u8> {
+        serde_ipld_dagcbor::to_vec(self).unwrap()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ChangeOp {
     #[serde(flatten)]
     data: PlcData,
@@ -138,7 +167,13 @@ struct ChangeOp {
     prev: Option<Cid>,
 }
 
-#[derive(Debug, Deserialize)]
+impl ChangeOp {
+    fn rotation_keys(&self) -> impl Iterator<Item = &str> {
+        self.data.rotation_keys.iter().map(|s| s.as_str())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct TombstoneOp {
     /// A CID hash pointer to a previous operation.
     ///
@@ -146,7 +181,7 @@ struct TombstoneOp {
     prev: Cid,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyCreateOp {
     /// A `did:key` value.
@@ -165,5 +200,24 @@ struct LegacyCreateOp {
 impl LegacyCreateOp {
     fn rotation_keys(&self) -> impl Iterator<Item = &str> {
         [self.recovery_key.as_str(), self.signing_key.as_str()].into_iter()
+    }
+
+    pub(crate) fn into_plc_data(self) -> PlcData {
+        PlcData {
+            rotation_keys: self.rotation_keys().map(String::from).collect(),
+            verification_methods: Some(("atproto".into(), self.signing_key))
+                .into_iter()
+                .collect(),
+            also_known_as: vec![format!("at://{}", self.handle)],
+            services: Some((
+                "atproto_pds".into(),
+                Service {
+                    r#type: "AtprotoPersonalDataServer".into(),
+                    endpoint: self.service,
+                },
+            ))
+            .into_iter()
+            .collect(),
+        }
     }
 }

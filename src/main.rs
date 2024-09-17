@@ -6,6 +6,7 @@ mod data;
 mod error;
 mod local;
 mod remote;
+mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), error::Error> {

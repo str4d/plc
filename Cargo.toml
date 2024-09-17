@@ -19,6 +19,11 @@ atrium-api = "0.24"
 atrium-crypto = "0.1"
 atrium-xrpc = "0.11"
 atrium-xrpc-client = "0.5"
+base32 = "0.5"
+base64ct = { version = "1.6", features = ["alloc"] }
+cid = "0.11"
+serde_ipld_dagcbor = "0.6"
+sha2 = "0.10"
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -34,4 +39,5 @@ serde_json = "1"
 xdg = "2"
 
 [dev-dependencies]
+rand_core = "0.6"
 snapbox = { version = "0.6", features = ["dir"] }
