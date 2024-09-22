@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::iter;
 
 use atrium_api::types::string::{Cid, Datetime, Did};
@@ -95,6 +95,7 @@ impl TestLog {
                 .collect(),
             },
             prev: None,
+            extra_fields: BTreeMap::new(),
         });
 
         let operation = add_signature(
@@ -545,6 +546,7 @@ impl Update {
             Operation::Change(ChangeOp {
                 data: new_data,
                 prev: self.with_prev.unwrap_or(Some(prev_op.cid.clone())),
+                extra_fields: BTreeMap::new(),
             }),
             &log,
             self.signed_with_key,

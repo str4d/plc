@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use atrium_api::types::string::{Cid, Datetime, Did};
 use cid::multihash::Multihash;
 use diff::Diff;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -184,6 +187,7 @@ impl LogEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SignedOperation {
     #[serde(flatten)]
     pub(crate) content: Operation,
@@ -239,6 +243,9 @@ pub(crate) struct ChangeOp {
     ///
     /// In DAG-CBOR encoding, the CID is string-encoded, not a binary IPLD "Link".
     pub(crate) prev: Option<Cid>,
+    /// Thanks to @retr0.id for sponsoring this field.
+    #[serde(flatten)]
+    pub(crate) extra_fields: BTreeMap<String, Value>,
 }
 
 impl ChangeOp {

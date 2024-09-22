@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::anyhow;
 use async_sqlite::{
@@ -130,6 +130,7 @@ impl Db {
                                     atproto_signing,
                                     atproto_pds,
                                     op.prev,
+                                    Some(op.extra_fields),
                                     &entry.operation.sig,
                                 )?;
 
@@ -170,6 +171,7 @@ impl Db {
                                     None,
                                     None,
                                     Some(op.prev),
+                                    None,
                                     &entry.operation.sig,
                                 )?;
                             }
@@ -186,6 +188,7 @@ impl Db {
                                     Some(vec![format!("at://{}", op.handle)]),
                                     Some(atproto_signing),
                                     Some(atproto_pds),
+                                    None,
                                     None,
                                     &entry.operation.sig,
                                 )?;
@@ -329,6 +332,7 @@ CREATE TABLE IF NOT EXISTS plc_log (
     atproto_signing INTEGER,
     atproto_pds INTEGER,
     prev INTEGER,
+    extra_fields JSON,
     -- Signatures are stored in their Base64 encoding because
     -- the log contains signatures with invalid padding.
     sig TEXT NOT NULL,
@@ -406,10 +410,12 @@ impl<'a> DbInserter<'a> {
         let stmt_insert_entry = tx.prepare_cached(
             "INSERT INTO plc_log(
                 cid, identity, created_at, nullified,
-                type, also_known_as, atproto_signing, atproto_pds, prev, sig
+                type, also_known_as, atproto_signing, atproto_pds, prev,
+                extra_fields, sig
             ) VALUES(
                 :cid, :identity, :created_at, :nullified,
-                :type, :also_known_as, :atproto_signing, :atproto_pds, :prev, :sig
+                :type, :also_known_as, :atproto_signing, :atproto_pds, :prev,
+                :extra_fields, :sig
             )
             ON CONFLICT(cid) DO UPDATE SET cid = cid
             RETURNING entry_id",
@@ -472,6 +478,7 @@ impl<'a> DbInserter<'a> {
         atproto_signing: Option<i64>,
         atproto_pds: Option<i64>,
         prev: Option<Cid>,
+        extra_fields: Option<BTreeMap<String, serde_json::Value>>,
         sig: &str,
     ) -> async_sqlite::rusqlite::Result<i64> {
         let also_known_as = also_known_as.map(|aka| {
@@ -487,6 +494,12 @@ impl<'a> DbInserter<'a> {
             })
             .transpose()?;
 
+        let extra_fields = extra_fields.and_then(|extra_fields| {
+            (!extra_fields.is_empty()).then_some(serde_json::Value::Object(
+                extra_fields.into_iter().collect(),
+            ))
+        });
+
         self.stmt_insert_entry.query_row(
             named_params! {
                 ":cid": cid.as_ref().to_bytes(),
@@ -498,6 +511,7 @@ impl<'a> DbInserter<'a> {
                 ":atproto_signing": atproto_signing,
                 ":atproto_pds": atproto_pds,
                 ":prev": prev,
+                ":extra_fields": extra_fields,
                 ":sig": sig,
             },
             |row| row.get(0),
@@ -564,6 +578,7 @@ struct Entry {
     atproto_signing: Option<String>,
     atproto_pds: Option<String>,
     prev: Option<cid::Result<cid::Cid>>,
+    extra_fields: Option<serde_json::Value>,
     sig: String,
 }
 
@@ -583,6 +598,7 @@ impl Entry {
                 signing.key AS atproto_signing,
                 atproto_pds.endpoint AS atproto_pds,
                 prev.cid AS prev,
+                curr.extra_fields,
                 curr.sig
             FROM plc_log curr
             JOIN identity ON curr.identity = identity.identity_id
@@ -611,6 +627,7 @@ impl Entry {
                 signing.key AS atproto_signing,
                 atproto_pds.endpoint AS atproto_pds,
                 prev.cid AS prev,
+                curr.extra_fields,
                 curr.sig
             FROM plc_log curr
             JOIN identity ON curr.identity = identity.identity_id
@@ -643,6 +660,7 @@ impl Entry {
                 signing.key AS atproto_signing,
                 atproto_pds.endpoint AS atproto_pds,
                 prev.cid AS prev,
+                curr.extra_fields,
                 curr.sig
             FROM plc_log curr
             JOIN identity ON curr.identity = identity.identity_id
@@ -675,6 +693,7 @@ impl Entry {
                 .get_ref("prev")?
                 .as_blob_or_null()?
                 .map(cid::Cid::read_bytes),
+            extra_fields: row.get("extra_fields")?,
             sig: row.get("sig")?,
         })
     }
@@ -743,6 +762,11 @@ impl HydratedEntry {
 
         let cid = Cid::new(entry.cid?);
         let prev = entry.prev.transpose()?.map(Cid::new);
+        let extra_fields = match entry.extra_fields {
+            None => Ok(BTreeMap::new()),
+            Some(serde_json::Value::Object(map)) => Ok(map.into_iter().collect()),
+            Some(_) => Err(anyhow!("extra_fields not stored as a JSON object")),
+        }?;
 
         let content = match entry.r#type.as_str() {
             "O" => {
@@ -788,6 +812,7 @@ impl HydratedEntry {
                         services,
                     },
                     prev,
+                    extra_fields,
                 }))
             }
             "T" => {
