@@ -18,7 +18,7 @@ pub(crate) enum Error {
             atrium_api::com::atproto::identity::get_recommended_did_credentials::Error,
         >,
     ),
-    PlcDirectoryRequestFailed,
+    PlcDirectoryRequestFailed(reqwest::Error),
     PlcDirectoryReturnedInvalidAuditLog,
     PlcDirectoryReturnedInvalidDidDocument,
     #[cfg(feature = "mirror")]
@@ -44,8 +44,8 @@ impl fmt::Debug for Error {
             Error::PdsAuthFailed(e) => write!(f, "Failed to authenticate to PDS: {}", e),
             Error::PdsAuthRefreshFailed(e) => write!(f, "Failed to refresh PDS session: {}", e),
             Error::PdsServerKeyLookupFailed(e) => write!(f, "Lookup of PDS server keys failed: {}", e),
-            Error::PlcDirectoryRequestFailed => {
-                write!(f, "An error occurred while talking to plc.directory")
+            Error::PlcDirectoryRequestFailed(e) => {
+                write!(f, "An error occurred while talking to plc.directory: {e}")
             }
             Error::PlcDirectoryReturnedInvalidAuditLog => {
                 write!(f, "plc.directory returned an invalid audit log")
