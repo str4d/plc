@@ -20,7 +20,7 @@ pub(crate) struct AuditLog {
 }
 
 impl AuditLog {
-    pub(super) fn new(did: Did, entries: Vec<LogEntry>) -> Self {
+    pub(crate) fn new(did: Did, entries: Vec<LogEntry>) -> Self {
         Self { did, entries }
     }
 

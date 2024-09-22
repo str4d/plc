@@ -21,8 +21,10 @@ async fn main() -> Result<(), error::Error> {
         cli::Command::Ops(cli::Ops::List(command)) => command.run().await,
         cli::Command::Ops(cli::Ops::Audit(command)) => command.run().await,
         #[cfg(feature = "mirror")]
-        cli::Command::Mirror(cli::Mirror::Run(command)) => {
-            command.run().await.map_err(error::Error::Mirror)
+        cli::Command::Mirror(command) => match command {
+            cli::Mirror::Run(command) => command.run().await,
+            cli::Mirror::Audit(command) => command.run().await,
         }
+        .map_err(error::Error::Mirror),
     }
 }

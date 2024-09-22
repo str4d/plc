@@ -211,6 +211,55 @@ impl Db {
             .await?)
     }
 
+    pub(crate) async fn total_dids(&self) -> anyhow::Result<u64> {
+        let total_dids = self
+            .inner
+            .conn(move |conn| {
+                conn.prepare(
+                    "SELECT identity_id
+                    FROM identity
+                    ORDER BY identity_id DESC
+                    LIMIT 1",
+                )?
+                .query_row([], |row| row.get("identity_id"))
+            })
+            .await?;
+
+        Ok(total_dids)
+    }
+
+    pub(crate) async fn list_dids(
+        &self,
+        count: usize,
+        after: Option<u64>,
+    ) -> anyhow::Result<Vec<(u64, Did)>> {
+        let dids = self
+            .inner
+            .conn(move |conn| {
+                conn.prepare(
+                    "SELECT identity_id, did
+                    FROM identity
+                    ORDER BY identity_id
+                    LIMIT :count
+                    OFFSET :offset",
+                )?
+                .query_map(
+                    named_params! {":count": count, ":offset": after.unwrap_or(0)},
+                    |row| Ok((row.get("identity_id")?, row.get("did")?)),
+                )?
+                .collect::<Result<Vec<_>, _>>()
+            })
+            .await?;
+
+        dids.into_iter()
+            .map(|(id, did)| {
+                Did::new(did)
+                    .map_err(|e| anyhow!("{e}"))
+                    .map(|did| (id, did))
+            })
+            .collect()
+    }
+
     pub(crate) async fn get_last_active_entry(
         &self,
         did: Did,
