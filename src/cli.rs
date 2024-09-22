@@ -39,10 +39,17 @@ pub(crate) struct List {
 #[derive(Debug, Subcommand)]
 pub(crate) enum Ops {
     List(ListOps),
+    Audit(AuditOps),
 }
 
 /// Lists operations for a user's DID.
 #[derive(Debug, Args)]
 pub(crate) struct ListOps {
+    pub(crate) user: String,
+}
+
+/// Audit operations for a user's DID.
+#[derive(Debug, Args)]
+pub(crate) struct AuditOps {
     pub(crate) user: String,
 }

@@ -21,6 +21,7 @@ atrium-xrpc = "0.11"
 atrium-xrpc-client = "0.5"
 base32 = "0.5"
 base64ct = { version = "1.6", features = ["alloc"] }
+chrono = "0.4"
 cid = "0.11"
 serde_ipld_dagcbor = "0.6"
 sha2 = "0.10"
@@ -41,3 +42,9 @@ xdg = "2"
 [dev-dependencies]
 rand_core = "0.6"
 snapbox = { version = "0.6", features = ["dir"] }
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    "cfg(tarpaulin_include)",
+]

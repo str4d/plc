@@ -33,13 +33,26 @@ impl Plc {
 
         #[cfg(windows)]
         {
-            panic!("Test cannot be run on Windows")
+            cmd.env("LOCALAPPDATA", self.config_dir.path().unwrap())
         }
 
         #[cfg(any(unix, target_os = "redox"))]
         {
             cmd.env("XDG_CONFIG_HOME", self.config_dir.path().unwrap())
         }
+    }
+}
+
+#[test]
+fn audit() {
+    for handle in ["bsky.app", "str4d.bsky.social", "dholms.xyz"] {
+        let plc = Plc::init(handle);
+
+        plc.run()
+            .args(["ops", "audit", handle])
+            .assert()
+            .success()
+            .stdout_eq(file!["integration-audit-success.stdout"]);
     }
 }
 

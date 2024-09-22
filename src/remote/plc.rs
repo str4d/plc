@@ -45,6 +45,22 @@ pub(crate) async fn get_ops_log(did: &Did, client: &Client) -> Result<Operations
     OperationsLog::new(ops)
 }
 
+pub(crate) async fn get_audit_log(did: &Did, client: &Client) -> Result<AuditLog, Error> {
+    let resp = client
+        .get(format!("https://plc.directory/{}/log/audit", did.as_str()))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|_| Error::PlcDirectoryRequestFailed)?;
+
+    let entries = resp
+        .json()
+        .await
+        .map_err(|_| Error::PlcDirectoryReturnedInvalidAuditLog)?;
+
+    Ok(AuditLog::new(did.clone(), entries))
+}
+
 #[derive(Debug)]
 pub(crate) struct OperationsLog {
     pub(crate) create: PlcData,
