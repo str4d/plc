@@ -6,6 +6,7 @@ mod data;
 mod error;
 mod local;
 mod remote;
+mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), error::Error> {
@@ -15,5 +16,6 @@ async fn main() -> Result<(), error::Error> {
         cli::Command::Auth(cli::Auth::Login(command)) => command.run().await,
         cli::Command::List(command) => command.run().await,
         cli::Command::Ops(cli::Ops::List(command)) => command.run().await,
+        cli::Command::Ops(cli::Ops::Audit(command)) => command.run().await,
     }
 }

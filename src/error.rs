@@ -19,6 +19,7 @@ pub(crate) enum Error {
         >,
     ),
     PlcDirectoryRequestFailed,
+    PlcDirectoryReturnedInvalidAuditLog,
     PlcDirectoryReturnedInvalidDidDocument,
     PlcDirectoryReturnedInvalidOperationLog,
     SessionSaveFailed,
@@ -41,6 +42,9 @@ impl fmt::Debug for Error {
             Error::PdsServerKeyLookupFailed(e) => write!(f, "Lookup of PDS server keys failed: {}", e),
             Error::PlcDirectoryRequestFailed => {
                 write!(f, "An error occurred while talking to plc.directory")
+            }
+            Error::PlcDirectoryReturnedInvalidAuditLog => {
+                write!(f, "plc.directory returned an invalid audit log")
             }
             Error::PlcDirectoryReturnedInvalidDidDocument => {
                 write!(f, "plc.directory returned an invalid DID document")

@@ -4,7 +4,7 @@ use atrium_api::types::string::Did;
 use atrium_crypto::Algorithm;
 use diff::Diff;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     error::Error,
@@ -19,7 +19,7 @@ pub(crate) struct State {
     plc: PlcData,
 }
 
-#[derive(Clone, Debug, Deserialize, Diff)]
+#[derive(Clone, Debug, Serialize, Deserialize, Diff)]
 #[diff(attr(
     #[derive(Debug)]
 ))]
@@ -31,7 +31,7 @@ pub(crate) struct PlcData {
     pub(crate) services: HashMap<String, Service>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Diff)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Diff)]
 #[diff(attr(
     #[derive(Debug)]
 ))]

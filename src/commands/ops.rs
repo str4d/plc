@@ -1,5 +1,5 @@
 use crate::{
-    cli::ListOps,
+    cli::{AuditOps, ListOps},
     data::{PlcData, State},
     error::Error,
     remote::plc,
@@ -123,6 +123,27 @@ impl ListOps {
         } else {
             println!("Current state:");
             print_state(state.inner_data());
+        }
+
+        Ok(())
+    }
+}
+
+impl AuditOps {
+    pub(crate) async fn run(&self) -> Result<(), Error> {
+        let client = reqwest::Client::new();
+
+        let state = State::resolve(&self.user, &client).await?;
+
+        let log = plc::get_audit_log(state.did(), &client).await?;
+
+        if let Err(errors) = log.validate() {
+            println!("Audit log for {} is invalid:", self.user);
+            for e in errors {
+                println!("- {}", e);
+            }
+        } else {
+            println!("Audit log for {} is valid!", self.user);
         }
 
         Ok(())
