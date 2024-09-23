@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use atrium_api::types::string::{Cid, Did};
+use atrium_crypto::did::parse_did_key;
 use base64ct::Encoding;
 
 use crate::util::derive_did;
@@ -12,6 +13,18 @@ use super::{LogEntry, Operation};
 mod tests;
 
 const RECOVERY_WINDOW: chrono::TimeDelta = chrono::TimeDelta::hours(72);
+
+/// Time before which a [`LogEntry`] is permitted to have a malleable signature.
+///
+/// https://github.com/did-method-plc/did-method-plc/pull/54 changed the behaviour of
+/// plc.directory to prevent signature malleability. Prior to the time at which this PR
+/// was merged, the following malleability was permitted:
+///
+/// - The Base64 encoding of signatures could contain padding.
+/// - Signatures could be DER-encoded.
+/// - High-S signatures were permitted.
+const MALLEABILITY_PREVENTED: chrono::DateTime<chrono::Utc> =
+    chrono::DateTime::from_timestamp_nanos(1_701_370_214_000_000_000);
 
 #[derive(Debug)]
 pub(crate) struct AuditLog {
@@ -252,9 +265,15 @@ impl LogEntry {
     ) -> (Result<(), Vec<AuditError>>, Option<usize>) {
         let mut errors = vec![];
 
-        // Validate signatures.
-        let unsigned = self.operation.unsigned_bytes();
-        let signature = match base64ct::Base64UrlUnpadded::decode_vec(&self.operation.sig) {
+        let allow_malleable = self.created_at.as_ref() < &MALLEABILITY_PREVENTED;
+
+        // Decode signature.
+        let encoded_sig = if allow_malleable {
+            self.operation.sig.trim_end_matches('=')
+        } else {
+            &self.operation.sig
+        };
+        let signature = match base64ct::Base64UrlUnpadded::decode_vec(encoded_sig) {
             Ok(signature) => Some(signature),
             Err(_) => {
                 errors.push(AuditError::InvalidSignatureEncoding {
@@ -264,9 +283,20 @@ impl LogEntry {
             }
         };
 
+        // Validate signature.
+        let unsigned = self.operation.unsigned_bytes();
         let check_sig = |(_, did_key): &(_, &str)| {
             if let Some(sig) = &signature {
-                atrium_crypto::verify::verify_signature(did_key, &unsigned, sig).is_ok()
+                parse_did_key(did_key)
+                    .and_then(|(alg, public_key)| {
+                        atrium_crypto::verify::Verifier::new(allow_malleable).verify(
+                            alg,
+                            &public_key,
+                            &unsigned,
+                            sig,
+                        )
+                    })
+                    .is_ok()
             } else {
                 // If we already raised an error for invalid signature
                 // encoding, don't raise a separate error for a trust failure
