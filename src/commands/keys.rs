@@ -1,6 +1,6 @@
-use crate::{cli::List, data::State, error::Error, remote::pds};
+use crate::{cli::ListKeys, data::State, error::Error, remote::pds};
 
-impl List {
+impl ListKeys {
     pub(crate) async fn run(&self) -> Result<(), Error> {
         let client = reqwest::Client::new();
 
