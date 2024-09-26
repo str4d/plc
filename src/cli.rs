@@ -11,7 +11,8 @@ pub(crate) struct Options {
 pub(crate) enum Command {
     #[command(subcommand)]
     Auth(Auth),
-    List(List),
+    #[command(subcommand)]
+    Keys(Keys),
     #[command(subcommand)]
     Ops(Ops),
 }
@@ -29,9 +30,15 @@ pub(crate) struct Login {
     pub(crate) app_password: String,
 }
 
+/// Manage keys for a DID.
+#[derive(Debug, Subcommand)]
+pub(crate) enum Keys {
+    List(ListKeys),
+}
+
 /// Lists keys for a user
 #[derive(Debug, Args)]
-pub(crate) struct List {
+pub(crate) struct ListKeys {
     pub(crate) user: String,
 }
 

@@ -22,7 +22,7 @@ pub(crate) async fn get_state(did: &Did, client: &Client) -> Result<State, Error
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|_| Error::PlcDirectoryRequestFailed)?;
+        .map_err(Error::PlcDirectoryRequestFailed)?;
 
     resp.json::<State>()
         .await
@@ -35,7 +35,7 @@ pub(crate) async fn get_ops_log(did: &Did, client: &Client) -> Result<Operations
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|_| Error::PlcDirectoryRequestFailed)?;
+        .map_err(Error::PlcDirectoryRequestFailed)?;
 
     let ops = resp
         .json()
@@ -51,7 +51,7 @@ pub(crate) async fn get_audit_log(did: &Did, client: &Client) -> Result<AuditLog
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|_| Error::PlcDirectoryRequestFailed)?;
+        .map_err(Error::PlcDirectoryRequestFailed)?;
 
     let entries = resp
         .json()

@@ -14,7 +14,7 @@ async fn main() -> Result<(), error::Error> {
 
     match opts.command {
         cli::Command::Auth(cli::Auth::Login(command)) => command.run().await,
-        cli::Command::List(command) => command.run().await,
+        cli::Command::Keys(cli::Keys::List(command)) => command.run().await,
         cli::Command::Ops(cli::Ops::List(command)) => command.run().await,
         cli::Command::Ops(cli::Ops::Audit(command)) => command.run().await,
     }
