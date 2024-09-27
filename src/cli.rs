@@ -15,6 +15,9 @@ pub(crate) enum Command {
     Keys(Keys),
     #[command(subcommand)]
     Ops(Ops),
+    #[cfg(feature = "mirror")]
+    #[command(subcommand)]
+    Mirror(Mirror),
 }
 
 /// Manage authentication
@@ -59,4 +62,30 @@ pub(crate) struct ListOps {
 #[derive(Debug, Args)]
 pub(crate) struct AuditOps {
     pub(crate) user: String,
+}
+
+/// Operate a mirror of the PLC registry.
+#[cfg(feature = "mirror")]
+#[derive(Debug, Subcommand)]
+pub(crate) enum Mirror {
+    Run(RunMirror),
+    Audit(AuditMirror),
+}
+
+/// Runs a mirror of the PLC registry.
+#[cfg(feature = "mirror")]
+#[derive(Debug, Args)]
+pub(crate) struct RunMirror {
+    pub(crate) sqlite_db: String,
+
+    /// If provided, the mirror will expose the same API as plc.directory on this address.
+    #[arg(short, long)]
+    pub(crate) listen: Option<String>,
+}
+
+/// Audits the contents of the given PLC registry mirror.
+#[cfg(feature = "mirror")]
+#[derive(Debug, Args)]
+pub(crate) struct AuditMirror {
+    pub(crate) sqlite_db: String,
 }

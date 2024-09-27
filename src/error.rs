@@ -21,9 +21,13 @@ pub(crate) enum Error {
     PlcDirectoryRequestFailed(reqwest::Error),
     PlcDirectoryReturnedInvalidAuditLog,
     PlcDirectoryReturnedInvalidDidDocument,
+    #[cfg(feature = "mirror")]
+    PlcDirectoryReturnedInvalidLogEntries,
     PlcDirectoryReturnedInvalidOperationLog,
     SessionSaveFailed,
     UnsupportedDidMethod(String),
+    #[cfg(feature = "mirror")]
+    Mirror(anyhow::Error),
 }
 
 // Rust only supports `fn main() -> Result<(), E: Debug>`, so we implement `Debug`
@@ -49,11 +53,17 @@ impl fmt::Debug for Error {
             Error::PlcDirectoryReturnedInvalidDidDocument => {
                 write!(f, "plc.directory returned an invalid DID document")
             }
+            #[cfg(feature = "mirror")]
+            Error::PlcDirectoryReturnedInvalidLogEntries => {
+                write!(f, "plc.directory returned invalid log entries")
+            }
             Error::PlcDirectoryReturnedInvalidOperationLog => {
                 write!(f, "plc.directory returned an invalid operation log")
             }
             Error::SessionSaveFailed => write!(f, "Failed to save PDS session data"),
             Error::UnsupportedDidMethod(method) => write!(f, "Unsupported DID method {}; this tool only works with did:plc identities", method),
+            #[cfg(feature = "mirror")]
+            Error::Mirror(e) => write!(f, "{}", e),
         }
     }
 }

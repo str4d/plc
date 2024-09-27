@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use atrium_api::types::string::Did;
+use atrium_api::{did_doc, types::string::Did};
 use atrium_crypto::Algorithm;
 use diff::Diff;
 use reqwest::Client;
@@ -11,12 +11,16 @@ use crate::{
     remote::{handle, plc},
 };
 
-#[derive(Debug, Deserialize)]
+pub(crate) const ATPROTO_VERIFICATION_METHOD: &str = "atproto";
+pub(crate) const ATPROTO_PDS_KIND: &str = "atproto_pds";
+pub(crate) const ATPROTO_PDS_TYPE: &str = "AtprotoPersonalDataServer";
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct State {
-    did: Did,
+    pub(crate) did: Did,
     #[serde(flatten)]
-    plc: PlcData,
+    pub(crate) plc: PlcData,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Diff)]
@@ -81,7 +85,10 @@ impl State {
 
     pub(crate) fn signing_key(&self) -> Option<atrium_crypto::Result<Key>> {
         // Ignore non-ATProto verification methods.
-        self.plc.verification_methods.get("atproto").map(Key::did)
+        self.plc
+            .verification_methods
+            .get(ATPROTO_VERIFICATION_METHOD)
+            .map(Key::did)
     }
 
     pub(crate) fn rotation_keys(&self) -> Vec<atrium_crypto::Result<Key>> {
@@ -92,8 +99,45 @@ impl State {
     pub(crate) fn endpoint(&self) -> Option<&str> {
         self.plc
             .services
-            .get("atproto_pds")
-            .and_then(|v| (v.r#type == "AtprotoPersonalDataServer").then_some(v.endpoint.as_str()))
+            .get(ATPROTO_PDS_KIND)
+            .and_then(|v| (v.r#type == ATPROTO_PDS_TYPE).then_some(v.endpoint.as_str()))
+    }
+
+    /// Converts this DID PLC state into a DID document.
+    ///
+    /// Returns `Err(())` if this state contains an invalid verification method.
+    pub(crate) fn into_doc(self) -> Result<did_doc::DidDocument, ()> {
+        Ok(did_doc::DidDocument {
+            id: self.did.to_string(),
+            also_known_as: Some(self.plc.also_known_as),
+            verification_method: Some(
+                self.plc
+                    .verification_methods
+                    .into_iter()
+                    .map(|(service, key)| {
+                        Ok(did_doc::VerificationMethod {
+                            id: format!("{}#{service}", self.did.as_ref()),
+                            r#type: "Multikey".into(),
+                            controller: self.did.to_string(),
+                            public_key_multibase: Some(
+                                key.strip_prefix("did:key:").ok_or(())?.into(),
+                            ),
+                        })
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            service: Some(
+                self.plc
+                    .services
+                    .into_iter()
+                    .map(|(kind, service)| did_doc::Service {
+                        id: format!("#{kind}"),
+                        r#type: service.r#type,
+                        service_endpoint: service.endpoint,
+                    })
+                    .collect(),
+            ),
+        })
     }
 }
 

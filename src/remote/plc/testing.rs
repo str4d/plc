@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::iter;
 
 use atrium_api::types::string::{Cid, Datetime, Did};
@@ -10,7 +10,7 @@ use rand_core::OsRng;
 
 use super::{AuditLog, ChangeOp, LegacyCreateOp, LogEntry, Operation, SignedOperation};
 use crate::{
-    data::{PlcData, Service},
+    data::{PlcData, Service, ATPROTO_PDS_KIND, ATPROTO_PDS_TYPE, ATPROTO_VERIFICATION_METHOD},
     util::derive_did,
 };
 
@@ -45,7 +45,11 @@ impl Identity {
 
         Self {
             rotation: vec![P256Keypair::create(&mut rng), P256Keypair::create(&mut rng)],
-            signing: iter::once(("atproto".into(), P256Keypair::create(&mut rng))).collect(),
+            signing: iter::once((
+                ATPROTO_VERIFICATION_METHOD.into(),
+                P256Keypair::create(&mut rng),
+            ))
+            .collect(),
         }
     }
 }
@@ -81,9 +85,9 @@ impl TestLog {
                     .collect(),
                 also_known_as: vec!["at://example.com".into()],
                 services: [(
-                    "atproto_pds".into(),
+                    ATPROTO_PDS_KIND.into(),
                     Service {
-                        r#type: "AtprotoPersonalDataServer".into(),
+                        r#type: ATPROTO_PDS_TYPE.into(),
                         endpoint: "https://bsky.social".into(),
                     },
                 )]
@@ -91,6 +95,7 @@ impl TestLog {
                 .collect(),
             },
             prev: None,
+            extra_fields: BTreeMap::new(),
         });
 
         let operation = add_signature(
@@ -114,8 +119,10 @@ impl TestLog {
         let mut initial_state = Identity::generate();
 
         // For legacy create ops, the signing key is also a rotation key.
-        *initial_state.signing.get_mut("atproto").unwrap() =
-            P256Keypair::import(&initial_state.rotation[1].export()).unwrap();
+        *initial_state
+            .signing
+            .get_mut(ATPROTO_VERIFICATION_METHOD)
+            .unwrap() = P256Keypair::import(&initial_state.rotation[1].export()).unwrap();
 
         let content = Operation::LegacyCreate(LegacyCreateOp {
             signing_key: initial_state.rotation[1].did(),
@@ -491,8 +498,10 @@ impl Update {
             if let Some(new_signing_key) = self.new_signing_key {
                 new_data
                     .verification_methods
-                    .insert("atproto".into(), new_signing_key.did());
-                new_state.signing.insert("atproto".into(), new_signing_key);
+                    .insert(ATPROTO_VERIFICATION_METHOD.into(), new_signing_key.did());
+                new_state
+                    .signing
+                    .insert(ATPROTO_VERIFICATION_METHOD.into(), new_signing_key);
             }
 
             log.state_updates.push((log.entries.len(), new_state));
@@ -515,20 +524,20 @@ impl Update {
 
         match self.new_pds {
             Some(Some(endpoint)) => {
-                if let Some(service) = new_data.services.get_mut("atproto_pds") {
+                if let Some(service) = new_data.services.get_mut(ATPROTO_PDS_KIND) {
                     service.endpoint = endpoint;
                 } else {
                     new_data.services.insert(
-                        "atproto_pds".into(),
+                        ATPROTO_PDS_KIND.into(),
                         Service {
-                            r#type: "AtprotoPersonalDataServer".into(),
+                            r#type: ATPROTO_PDS_TYPE.into(),
                             endpoint,
                         },
                     );
                 }
             }
             Some(None) => {
-                new_data.services.remove("atproto_pds");
+                new_data.services.remove(ATPROTO_PDS_KIND);
             }
             _ => (),
         }
@@ -537,6 +546,7 @@ impl Update {
             Operation::Change(ChangeOp {
                 data: new_data,
                 prev: self.with_prev.unwrap_or(Some(prev_op.cid.clone())),
+                extra_fields: BTreeMap::new(),
             }),
             &log,
             self.signed_with_key,
@@ -710,7 +720,10 @@ fn sign_operation(
             add_signature(content, key, sig_kind)
         }
         Some(KeyKind::Signing) => {
-            let key = get_state(log, None).signing.get("atproto").expect("exists");
+            let key = get_state(log, None)
+                .signing
+                .get(ATPROTO_VERIFICATION_METHOD)
+                .expect("exists");
             add_signature(content, key, sig_kind)
         }
     }

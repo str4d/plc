@@ -1,12 +1,18 @@
+use std::collections::BTreeMap;
+
 use atrium_api::types::string::{Cid, Datetime, Did};
 use cid::multihash::Multihash;
 use diff::Diff;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    data::{PlcData, PlcDataDiff, Service, State},
+    data::{
+        PlcData, PlcDataDiff, Service, State, ATPROTO_PDS_KIND, ATPROTO_PDS_TYPE,
+        ATPROTO_VERIFICATION_METHOD,
+    },
     error::Error,
 };
 
@@ -59,6 +65,45 @@ pub(crate) async fn get_audit_log(did: &Did, client: &Client) -> Result<AuditLog
         .map_err(|_| Error::PlcDirectoryReturnedInvalidAuditLog)?;
 
     Ok(AuditLog::new(did.clone(), entries))
+}
+
+#[cfg(feature = "mirror")]
+pub(crate) async fn export(
+    after: Option<&Datetime>,
+    client: &Client,
+) -> Result<Vec<LogEntry>, Error> {
+    if let Some(d) = &after {
+        tracing::info!("Exporting log entries after {}", d.as_str());
+    } else {
+        tracing::info!("Exporting initial log entries");
+    }
+
+    let url = if let Some(after) = after {
+        format!(
+            "https://plc.directory/export?count=1000&after={}",
+            after.as_str(),
+        )
+    } else {
+        "https://plc.directory/export?count=1000".into()
+    };
+
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(Error::PlcDirectoryRequestFailed)?;
+
+    let entries = resp
+        .text()
+        .await
+        .map_err(|_| Error::PlcDirectoryReturnedInvalidLogEntries)?
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<Result<_, _>>()
+        .map_err(|_| Error::PlcDirectoryReturnedInvalidLogEntries)?;
+
+    Ok(entries)
 }
 
 #[derive(Debug)]
@@ -115,22 +160,39 @@ impl OperationsLog {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LogEntry {
-    did: Did,
-    operation: SignedOperation,
-    cid: Cid,
-    nullified: bool,
-    created_at: Datetime,
+pub(crate) struct LogEntry {
+    pub(crate) did: Did,
+    pub(crate) operation: SignedOperation,
+    pub(crate) cid: Cid,
+    pub(crate) nullified: bool,
+    pub(crate) created_at: Datetime,
+}
+
+impl LogEntry {
+    pub(crate) fn into_state(self) -> Option<State> {
+        match self.operation.content {
+            Operation::Change(op) => Some(State {
+                did: self.did,
+                plc: op.data,
+            }),
+            Operation::Tombstone(_) => None,
+            Operation::LegacyCreate(op) => Some(State {
+                did: self.did,
+                plc: op.into_plc_data(),
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SignedOperation {
     #[serde(flatten)]
-    content: Operation,
+    pub(crate) content: Operation,
     /// Signature of the operation in `base64url` encoding.
-    sig: String,
+    pub(crate) sig: String,
 }
 
 impl SignedOperation {
@@ -145,7 +207,7 @@ impl SignedOperation {
     /// Computes the CID for this operation.
     ///
     /// This is used in `prev` references to prior operations.
-    fn cid(&self) -> Cid {
+    pub(crate) fn cid(&self) -> Cid {
         Cid::new(cid::Cid::new_v1(
             0x71,
             Multihash::wrap(0x12, &Sha256::digest(self.signed_bytes())).expect("correct length"),
@@ -155,7 +217,7 @@ impl SignedOperation {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-enum Operation {
+pub(crate) enum Operation {
     #[serde(rename = "plc_operation")]
     Change(ChangeOp),
     #[serde(rename = "plc_tombstone")]
@@ -171,16 +233,19 @@ impl Operation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct ChangeOp {
+pub(crate) struct ChangeOp {
     #[serde(flatten)]
-    data: PlcData,
+    pub(crate) data: PlcData,
     /// A CID hash pointer to a previous operation if an update, or `None` for a creation.
     ///
     /// If `None`, the key should actually be part of the object, with value `None`, not
     /// simply omitted.
     ///
     /// In DAG-CBOR encoding, the CID is string-encoded, not a binary IPLD "Link".
-    prev: Option<Cid>,
+    pub(crate) prev: Option<Cid>,
+    /// Thanks to @retr0.id for sponsoring this field.
+    #[serde(flatten)]
+    pub(crate) extra_fields: BTreeMap<String, Value>,
 }
 
 impl ChangeOp {
@@ -190,27 +255,26 @@ impl ChangeOp {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct TombstoneOp {
+pub(crate) struct TombstoneOp {
     /// A CID hash pointer to a previous operation.
     ///
     /// In DAG-CBOR encoding, the CID is string-encoded, not a binary IPLD "Link".
-    prev: Cid,
+    pub(crate) prev: Cid,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LegacyCreateOp {
+pub(crate) struct LegacyCreateOp {
     /// A `did:key` value.
-    signing_key: String,
+    pub(crate) signing_key: String,
     /// A `did:key` value.
-    recovery_key: String,
+    pub(crate) recovery_key: String,
     /// A bare ATProto handle, with no `at://` prefix.
-    handle: String,
+    pub(crate) handle: String,
     /// HTTP/HTTPS URL of an ATProto PDS.
-    service: String,
+    pub(crate) service: String,
     /// Always `null`.
-    #[allow(dead_code)]
-    prev: (),
+    pub(crate) prev: (),
 }
 
 impl LegacyCreateOp {
@@ -221,14 +285,14 @@ impl LegacyCreateOp {
     pub(crate) fn into_plc_data(self) -> PlcData {
         PlcData {
             rotation_keys: self.rotation_keys().map(String::from).collect(),
-            verification_methods: Some(("atproto".into(), self.signing_key))
+            verification_methods: Some((ATPROTO_VERIFICATION_METHOD.into(), self.signing_key))
                 .into_iter()
                 .collect(),
             also_known_as: vec![format!("at://{}", self.handle)],
             services: Some((
-                "atproto_pds".into(),
+                ATPROTO_PDS_KIND.into(),
                 Service {
-                    r#type: "AtprotoPersonalDataServer".into(),
+                    r#type: ATPROTO_PDS_TYPE.into(),
                     endpoint: self.service,
                 },
             ))
